@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Registration - Crowd Monitor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        h1 { color: #333; font-size: 1.5rem; margin-bottom: 1.5rem; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 1rem; transition: background 0.3s; }
+        button:hover { background-color: #0056b3; }
+        .status { margin-top: 20px; font-size: 0.9rem; color: #666; }
+        .alert-box { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; }
+        .alert-content { background: #ff4444; color: white; padding: 2rem; border-radius: 10px; text-align: center; max-width: 90%; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        .alert-content h2 { margin-top: 0; }
+        .btn-exit { display: inline-block; margin-top: 15px; padding: 10px 20px; background: white; color: #ff4444; text-decoration: none; font-weight: bold; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="registration-form">
+    <h1>Event Crowd Monitoring System</h1>
+    <p>Please register to enter the event.</p>
+    <input type="text" id="name" placeholder="Full Name" required>
+    <input type="tel" id="phone" placeholder="Phone Number" required>
+    <button onclick="registerUser()">Register & Start Tracking</button>
+</div>
+
+<div class="container" id="tracking-status" style="display: none;">
+    <h1>You are being monitored</h1>
+    <div class="status">
+        <p>User ID: <span id="display-id"></span></p>
+        <p>Status: <span style="color: green; font-weight: bold;">Active</span></p>
+        <p>Updates sent: <span id="update-count">0</span></p>
+        <p>Last Location: <span id="last-loc">Waiting...</span></p>
+    </div>
+    <p style="font-size: 0.8rem; color: #888; margin-top: 20px;">Keep this tab open to stay safe.</p>
+</div>
+
+<div id="alert-overlay" class="alert-box">
+    <div class="alert-content">
+        <h2>⚠ HEAVY CROWD DETECTED</h2>
+        <p>Please move to a safer area immediately.</p>
+        <p>Your life is more precious than anything.</p>
+        <a id="exit-link" href="#" target="_blank" class="btn-exit">VIEW EXIT ROUTE</a>
+        <br><br>
+        <button onclick="dismissAlert()" style="background: rgba(255,255,255,0.2); border: 1px solid white; width: auto; padding: 5px 15px; font-size: 0.8rem;">Dismiss (I'm safe)</button>
+    </div>
+</div>
+
+<script>
+    let userId = localStorage.getItem('crowd_user_id');
+    let updateCount = 0;
+    let watchId = null;
+
+    // If already registered, show tracking directly (optional, but good UX)
+    /* 
+    if (userId) {
+        document.getElementById('registration-form').style.display = 'none';
+        document.getElementById('tracking-status').style.display = 'block';
+        document.getElementById('display-id').innerText = userId;
+        startTracking();
+    }
+    */
+    // Commented out to force fresh registration as per flow requirements usually
+
+    async function registerUser() {
+        const name = document.getElementById('name').value;
+        const phone = document.getElementById('phone').value;
+
+        if (!name || !phone) {
+            alert("Please fill all fields");
+            return;
+        }
+
+        try {
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, phone })
+            });
+            const data = await response.json();
+            
+            if (data.user_id) {
+                userId = data.user_id;
+                localStorage.setItem('crowd_user_id', userId);
+                
+                document.getElementById('registration-form').style.display = 'none';
+                document.getElementById('tracking-status').style.display = 'block';
+                document.getElementById('display-id').innerText = userId;
+                
+                startTracking();
+            } else {
+                alert("Registration failed");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error connecting to server");
+        }
+    }
+
+    function startTracking() {
+        if (!navigator.geolocation) {
+            alert("Geolocation is not supported by your browser");
+            return;
+        }
+
+        // Send immediately
+        navigator.geolocation.getCurrentPosition(sendLocation, handleError);
+
+        // Then watch
+        // We use setInterval for sending to server every 10s, but watchPosition to get latest coords
+        // Actually watchPosition calls callback whenever pos changes. 
+        // Requirement: "Send ... every 10 seconds". 
+        // So we should store latest pos from watchPosition and use setInterval to send it.
+        
+        let lastLat = null;
+        let lastLon = null;
+
+        watchId = navigator.geolocation.watchPosition((position) => {
+            lastLat = position.coords.latitude;
+            lastLon = position.coords.longitude;
+            document.getElementById('last-loc').innerText = `${lastLat.toFixed(4)}, ${lastLon.toFixed(4)}`;
+        }, handleError, {
+            enableHighAccuracy: true,
+            maximumAge: 10000,
+            timeout: 5000
+        });
+
+        // Send loop
+        setInterval(() => {
+            if (lastLat !== null && lastLon !== null) {
+                sendLocation({ coords: { latitude: lastLat, longitude: lastLon } });
+            }
+        }, 10000);
+    }
+
+    async function sendLocation(position) {
+        if (!userId) return;
+
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+
+        try {
+            const response = await fetch('/location', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: userId,
+                    latitude: lat,
+                    longitude: lon
+                })
+            });
+            const data = await response.json();
+            
+            updateCount++;
+            document.getElementById('update-count').innerText = updateCount;
+
+            if (data.crowd_alert) {
+                showAlert(data.exit_link);
+            }
+        } catch (e) {
+            console.error("Error sending location", e);
+        }
+    }
+
+    function handleError(error) {
+        console.warn("GPS Error:", error);
+        document.getElementById('last-loc').innerText = "GPS Error: " + error.message;
+    }
+
+    function showAlert(link) {
+        const overlay = document.getElementById('alert-overlay');
+        const linkBtn = document.getElementById('exit-link');
+        if (link) linkBtn.href = link;
+        overlay.style.display = 'flex';
+        
+        // Optional: Play sound
+        // const audio = new Audio('/static/alert.mp3'); 
+        // audio.play().catch(e => console.log("Audio play failed", e));
+    }
+    
+    function dismissAlert() {
+        document.getElementById('alert-overlay').style.display = 'none';
+        // It might reappear in 10s if still in crowd. That's intended behavior (persistent warning).
+    }
+</script>
+
+</body>
+</html>
