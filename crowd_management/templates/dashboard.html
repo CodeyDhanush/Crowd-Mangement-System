@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Crowd Monitor</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            background: #333;
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            font-size: 0.9rem;
+        }
+
+        .stat-box {
+            background: #444;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            color: #4caf50;
+        }
+
+        .stat-value.danger {
+            color: #f44336;
+        }
+
+        #map {
+            flex-grow: 1;
+            height: 100%;
+        }
+
+        .dashboard-container {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        .map-section {
+            flex: 1;
+            position: relative;
+            border-right: 2px solid #333;
+        }
+
+        .cctv-section {
+            flex: 1;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+        }
+
+        .video-container {
+            width: 100%;
+            height: auto;
+            max-height: 80%;
+            border: 2px solid #555;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
+            position: relative;
+        }
+
+        .video-container img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .cctv-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #0f0;
+            padding: 5px 10px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+
+        .legend {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            font-size: 0.8rem;
+        }
+
+        .dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .green {
+            background: green;
+        }
+
+        .red {
+            background: red;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>Crowd Management Dashboard</h1>
+        <div class="stats">
+            <div class="stat-box">Active Users: <span id="total-users" class="stat-value">0</span></div>
+            <div class="stat-box">Crowd Zones: <span id="crowd-zones" class="stat-value danger">0</span></div>
+            <div class="stat-box">CCTV Live Count: <span id="camera-count" class="stat-value">0</span></div>
+            <div class="stat-box" style="margin-left: 10px;">
+                <label for="threshold" style="font-size: 0.8rem; color: #ddd;">Alert Threshold:</label>
+                <input type="number" id="threshold" value="5" min="2"
+                    style="width: 50px; background: #555; border: 1px solid #777; color: white; border-radius: 3px; padding: 2px;">
+            </div>
+        </div>
+    </header>
+
+    <div class="dashboard-container">
+        <div class="map-section">
+            <div id="map" style="height: 100%;"></div>
+            <div class="legend">
+                <div><span class="dot green"></span> Normal</div>
+                <div><span class="dot red"></span> High Crowd (> 5 users)</div>
+            </div>
+        </div>
+        <div class="cctv-section">
+            <h2 style="color: #fff; margin-top: 0; font-size: 1rem; align-self: flex-start;">📹 LIVE CCTV FOOTAGE
+                (YOLOv8)</h2>
+            <div class="video-container">
+                <img src="{{ url_for('video_feed') }}"
+                    onerror="this.src='https://placehold.co/640x480?text=CCTV+Feed+Connecting...'" alt="CCTV Feed">
+                <div class="cctv-overlay">
+                    LIVE • REGION-01 • <span id="sync-time">00:00:00</span>
+                </div>
+            </div>
+            <div style="color: #888; font-size: 0.8rem; margin-top: 10px;">
+                Connecting to IP Camera: 100.104.168.30:8080
+            </div>
+        </div>
+    </div>
+
+    <audio id="alert-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3"
+        preload="auto"></audio>
+
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <script>
+        // Initialize Map
+        const map = L.map('map').setView([20, 0], 2);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        if (Notification.permission !== "granted") {
+            Notification.requestPermission();
+        }
+
+        let markers = {};
+        let zoneLayers = [];
+        let heatLayer = null;
+
+        async function fetchLocations() {
+            try {
+                const response = await fetch('/current-locations');
+                const data = await response.json();
+
+                // Update stats
+                document.getElementById('total-users').innerText = data.total_active;
+                document.getElementById('crowd-zones').innerText = data.crowd_zones;
+
+                const camCount = data.camera_count || 0;
+                const camEl = document.getElementById('camera-count');
+                camEl.innerText = camCount;
+
+                // YOLO styling for camera stat
+                if (camCount >= 5) {
+                    camEl.className = 'stat-value danger';
+                } else {
+                    camEl.className = 'stat-value';
+                }
+
+
+                // Prepare data for markers and heatmap
+                const currentIds = new Set();
+                const heatData = [];
+                const bounds = [];
+                let anyCrowd = false;
+
+                // Clear old zone layers
+                zoneLayers.forEach(layer => map.removeLayer(layer));
+                zoneLayers = [];
+
+                // Draw Red Zones
+                if (data.red_zones) {
+                    data.red_zones.forEach(zone => {
+                        const circle = L.circle([zone.lat, zone.lon], {
+                            color: 'red',
+                            fillColor: '#f03',
+                            fillOpacity: 0.3,
+                            radius: zone.radius || 20
+                        }).addTo(map);
+
+                        circle.bindPopup(`<b>⚠ RED ZONE</b><br>Count: ${zone.count} people`);
+                        zoneLayers.push(circle);
+                        anyCrowd = true;
+                    });
+                }
+
+                data.users.forEach(user => {
+                    currentIds.add(user.id);
+
+                    const color = user.is_crowded ? 'red' : 'green';
+                    const radius = user.is_crowded ? 8 : 5;
+
+                    // Heatmap data point: [lat, lng, intensity]
+                    heatData.push([user.latitude, user.longitude, user.is_crowded ? 1.0 : 0.5]);
+
+                    if (markers[user.id]) {
+                        // Update existing
+                        markers[user.id].setLatLng([user.latitude, user.longitude]);
+                        markers[user.id].setStyle({ color: color, fillColor: color, radius: radius });
+                        markers[user.id].bindPopup(`<b>${user.name}</b><br>Values: ${user.latitude.toFixed(4)}, ${user.longitude.toFixed(4)}`);
+                    } else {
+                        // Create new
+                        const marker = L.circleMarker([user.latitude, user.longitude], {
+                            color: color,
+                            fillColor: color,
+                            fillOpacity: 0.8,
+                            radius: radius
+                        }).addTo(map);
+                        marker.bindPopup(`<b>${user.name}</b><br>ID: ${user.id}`);
+                        markers[user.id] = marker;
+                    }
+                    bounds.push([user.latitude, user.longitude]);
+                });
+
+                // Remove old markers
+                for (let id in markers) {
+                    if (!currentIds.has(parseInt(id))) {
+                        map.removeLayer(markers[id]);
+                        delete markers[id];
+                    }
+                }
+
+                // Update Heatmap Layer
+                if (heatLayer) {
+                    heatLayer.setLatLngs(heatData);
+                } else {
+                    heatLayer = L.heatLayer(heatData, {
+                        radius: 25,
+                        blur: 15,
+                        maxZoom: 17,
+                        max: 1.0,
+                        gradient: {
+                            0.4: 'blue',
+                            0.6: 'cyan',
+                            0.7: 'lime',
+                            0.8: 'yellow',
+                            1.0: 'red'
+                        }
+                    }).addTo(map);
+                }
+
+                if (anyCrowd) {
+                    const audio = document.getElementById('alert-sound');
+                    // Play only if not already playing to avoid overlap mayhem
+                    if (audio.paused) {
+                        const playPromise = audio.play();
+                        if (playPromise !== undefined) {
+                            playPromise.catch(error => {
+                                // Auto-play was prevented
+                                console.log("Audio play prevented: ", error);
+                            });
+                        }
+                    }
+                    // Also browser notification
+                    if (Notification.permission === "granted") {
+                        // Throttle notifications? Browser usually handles duplicates but let's be nice.
+                        // Ideally checking a flag if we already notified for this state.
+                    }
+                }
+
+                if (bounds.length > 0 && !window.hasFitBounds) {
+                    map.fitBounds(bounds, { padding: [50, 50] });
+                    window.hasFitBounds = true;
+                }
+
+            } catch (e) {
+                console.error("Error fetching locations:", e);
+            }
+        }
+
+        // Poll every 5 seconds
+        setInterval(fetchLocations, 5000);
+        fetchLocations(); // Initial call
+    </script>
+
+</body>
+
+</html>
