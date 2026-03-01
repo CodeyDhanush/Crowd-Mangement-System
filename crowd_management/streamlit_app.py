@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Crowd Monitoring System", page_icon="👥")
 
-DB_NAME = "crowd.db"
+DB_NAME = "crowd.db"  
 CROWD_THRESHOLD = 5
 CROWD_RADIUS_KM = 0.02  # 20 meters
 
@@ -190,5 +190,6 @@ else:
         st.session_state.user_id = None
         st.session_state.registered = False
         st.rerun()
+
 
 
