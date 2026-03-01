@@ -190,3 +190,4 @@ else:
         st.session_state.user_id = None
         st.session_state.registered = False
         st.rerun()
+
