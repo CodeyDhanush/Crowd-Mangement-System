@@ -15,7 +15,7 @@ CROWD_THRESHOLD = 5
 CROWD_RADIUS_KM = 0.02  # 20 meters
 
 # ---------------- DATABASE ----------------
-def get_db_connection():
+def get_db_connection(): 
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
@@ -190,4 +190,5 @@ else:
         st.session_state.user_id = None
         st.session_state.registered = False
         st.rerun()
+
 
