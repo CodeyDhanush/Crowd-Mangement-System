@@ -18,7 +18,7 @@ IP_CAMERA_IPV6 = "http://[2401:4900:7b59:cb18:2d91:2461:fefe:1f45]:8080/video"
 
 # List of sources to try in order
 camera_sources = [IP_CAMERA_IPV4, IP_CAMERA_IPV6, 0] 
-
+  
 
 # Initialize Alert System with specific credentials
 alert_system = Alertmsg()
@@ -451,4 +451,5 @@ def get_current_locations():
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
 
