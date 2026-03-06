@@ -5,7 +5,6 @@ import math
 from datetime import datetime
 import os
 import cv2
--/
 
 from twilio.rest import Client
 from alert import Alertmsg
@@ -452,3 +451,4 @@ def get_current_locations():
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
