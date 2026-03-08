@@ -3,7 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
-from app import app, init_db, get_db_connection
+from app import app, init_db, get_db_connection 
 
 def test_crowd_simulation():
     # Setup
@@ -67,3 +67,4 @@ def test_crowd_simulation():
 
 if __name__ == "__main__":
     test_crowd_simulation()
+
